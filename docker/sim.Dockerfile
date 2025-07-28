@@ -51,14 +51,14 @@ RUN apt-get update && apt-get install -y mesa-utils
 
 COPY workspace/ $WORKSPACE_PATH/src/
 
-RUN apt-get install -y ros-humble-xacro
+RUN apt-get update && apt-get install -y ros-humble-xacro
 
+# Install rosdep dependencies and other packages
 RUN apt-get update && rosdep update && cd $WORKSPACE_PATH && \
     rosdep install --from-paths src -y --ignore-src
 
-RUN apt install ros-humble-teleop-twist-keyboard
-
 RUN apt-get update && apt-get install -y \
+    ros-humble-teleop-twist-keyboard \
     ros-humble-navigation2 \
     ros-humble-nav2-bringup \
     ros-humble-nav2-smac-planner \
@@ -66,11 +66,9 @@ RUN apt-get update && apt-get install -y \
     ros-humble-nav2-lifecycle-manager \
     ros-humble-nav2-amcl \
     ros-humble-nav2-map-server \
-    ros-humble-nav2-costmap-2d
-
-RUN apt-get update && apt-get install -y x11-apps
-
-RUN apt install -y ros-humble-gazebo-ros-pkgs
+    ros-humble-nav2-costmap-2d \
+    ros-humble-gazebo-ros-pkgs \
+    x11-apps
 
 COPY scripts/setup/ /root/scripts/setup
 RUN /root/scripts/setup/workspace.sh

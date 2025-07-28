@@ -76,8 +76,8 @@
         <origin xyz="${-wheelbase/2} ${-track/2} ${wheel_vertical_offset}" rpy="${M_PI} 0 0" />
     </xacro:limo_wheel>
 
-    <xacro:limo_laser parent_prefix="base_link" frame_prefix="laser">
+    <xacro:gazebo_laser parent_prefix="base_link" frame_prefix="laser">
         <origin xyz="0.05 0 0.2" rpy="0 0 0"/>
-    </xacro:limo_laser>
+    </xacro:gazebo_laser>
 
 </robot>
