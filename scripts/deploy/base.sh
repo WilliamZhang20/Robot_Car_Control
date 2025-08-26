@@ -1,7 +1,6 @@
 #!/bin/bash
 
 run_docker() {
-    xhost +local:root # Giving display privileges
 
     # -it is for interactive, tty
     # --privileged for accessing /dev contents
@@ -16,5 +15,4 @@ run_docker() {
 
 stop_docker() {
     docker stop limo_bot && docker rm limo_bot
-    xhost -local:root # Remove display privileges
 }

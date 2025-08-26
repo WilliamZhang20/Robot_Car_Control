@@ -59,14 +59,6 @@ RUN apt-get update && rosdep update && cd $WORKSPACE_PATH && \
 
 RUN apt-get update && apt-get install -y \
     ros-humble-teleop-twist-keyboard \
-    ros-humble-navigation2 \
-    ros-humble-nav2-bringup \
-    ros-humble-nav2-smac-planner \
-    ros-humble-nav2-dwb-controller \
-    ros-humble-nav2-lifecycle-manager \
-    ros-humble-nav2-amcl \
-    ros-humble-nav2-map-server \
-    ros-humble-nav2-costmap-2d \
     ros-humble-gazebo-ros-pkgs \
     x11-apps
 

@@ -80,12 +80,12 @@ def generate_launch_description():
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/model/limobot/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             "/world/empty_world/model/limobot/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
-            "/scan@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan"
+            "/world/empty_world/model/limobot/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan"
         ],
         remappings=[
             ("/model/limobot/odometry", "/odom"),
             ('/world/empty_world/model/limobot/joint_state', '/joint_states'),
-            ('/model/limobot/scan', '/scan'),
+            ("world/empty_world/model/limobot/scan", "/scan"),
         ]
     )
 

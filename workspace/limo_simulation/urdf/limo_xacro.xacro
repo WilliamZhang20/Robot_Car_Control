@@ -35,38 +35,77 @@
         </gazebo>
     </xacro:macro>
 
-     <xacro:macro name="gazebo_laser" params="parent_prefix frame_prefix *joint_pose">
+    <xacro:macro name="limo_laser" params="parent_prefix frame_prefix *joint_pose">
+        <link name='${frame_prefix}_link'>
+            <pose>0 0 0 0 0 0</pose>
+            <inertial>
+                <mass value="0.1"/>
+                <origin xyz="0.0 0 0" rpy="0 0 0"/>
+                <inertia
+                    ixx="1e-6" ixy="0" ixz="0"
+                    iyy="1e-6" iyz="0"
+                    izz="1e-6"
+                />
+            </inertial>
+            <visual name='laser_visual'>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder radius="0.02" length="0.01"/>
+                </geometry>
+                <material name='laser_material'>
+                    <ambient>0.1 0.1 0.1 1</ambient>
+                    <diffuse>0.1 0.1 0.2 1</diffuse>
+                    <specular>0 0 0 0</specular>
+                    <emissive>0 0 0 1</emissive>
+                </material>
+            </visual>
+            <collision name='laser_collision'>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder radius="0.032" length="0.016"/>
+                </geometry>
+            </collision>
+        </link>
+        <joint type="fixed" name="laser_joint">
+            <xacro:insert_block name="joint_pose"/>
+            <child link="${frame_prefix}_link"/>
+            <parent link="${parent_prefix}"/>
+        </joint>
         <gazebo reference="${frame_prefix}_link">
-            <sensor type="ray" name="laser_sensor">
-              <pose>0 0 0 0 0 0</pose>
-              <visualize>false</visualize>
-              <update_rate>8</update_rate>
-              <ray>
-                <scan>
-                  <horizontal>
-                    <samples>720</samples>
-                    <resolution>1</resolution>
-                    <min_angle>-2.09439504</min_angle>
-                    <max_angle>2.09439504</max_angle>
-                  </horizontal>
-                </scan>
-                <range>
-                  <min>0.05</min>
-                  <max>8.0</max>
-                  <resolution>0.01</resolution>
-                </range>
-                <noise>
-                  <type>gaussian</type>
-                  <mean>0.0</mean>
-                  <stddev>0.01</stddev>
-                </noise>
-              </ray>
-              <plugin name="gazebo_ros_laser_sensor" filename="libgazebo_ros_laser.so">
-                <topicName>/limo/scan</topicName>
-                <frameName>laser_link</frameName>
-              </plugin>
+            <material>Gazebo/Yellow</material>
+
+            <sensor name="${frame_prefix}_laser" type="ray"> 
+                <pose>0 0 0 0 0 0</pose>
+                <visualize>true</visualize>
+                <update_rate>10</update_rate> <!-- Publish rate in Hz -->
+                <ray>
+                    <scan>
+                        <horizontal>
+                            <samples>720</samples>
+                            <resolution>1</resolution>
+                            <min_angle>-2.356</min_angle> <!-- -135 degrees -->
+                            <max_angle>2.356</max_angle>  <!-- 135 degrees -->
+                        </horizontal>
+                        <vertical>
+                            <samples>1</samples>
+                            <resolution>1</resolution>
+                            <min_angle>0</min_angle>
+                            <max_angle>0</max_angle>
+                        </vertical>
+                    </scan>
+                    <range>
+                        <min>0.1</min>
+                        <max>10.0</max>
+                        <resolution>0.01</resolution>
+                    </range>
+                </ray>
+                <always_on>1</always_on>
+                <plugin name="gazebo_ros_laser" filename="libgazebo_ros_ray_sensor.so">
+                    <output_type>sensor_msgs/LaserScan</output_type>
+                    <frame_id>${frame_prefix}_link</frame_id>
+                </plugin>
             </sensor>
-          </gazebo>
+        </gazebo>
     </xacro:macro>
 
     <xacro:macro name="limo_depth_camera" params="parent_prefix frame_prefix *joint_pose">
