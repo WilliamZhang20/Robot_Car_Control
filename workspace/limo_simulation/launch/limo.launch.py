@@ -85,7 +85,7 @@ def generate_launch_description():
         remappings=[
             ("/model/limobot/odometry", "/odom"),
             ('/world/empty_world/model/limobot/joint_state', '/joint_states'),
-            ("world/empty_world/model/limobot/scan", "/scan"),
+            ("/world/empty_world/model/limobot/scan", "/scan"),
         ]
     )
 

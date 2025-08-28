@@ -74,36 +74,32 @@
         <gazebo reference="${frame_prefix}_link">
             <material>Gazebo/Yellow</material>
 
-            <sensor name="${frame_prefix}_laser" type="ray"> 
-                <pose>0 0 0 0 0 0</pose>
-                <visualize>true</visualize>
-                <update_rate>10</update_rate> <!-- Publish rate in Hz -->
+            <sensor name="${frame_prefix}_laser" type="gpu_lidar"> 
+                <topic>/world/empty_world/model/limobot/scan</topic>  <pose>0 0 0 0 0 0</pose>
+                <update_rate>10</update_rate>
                 <ray>
                     <scan>
                         <horizontal>
-                            <samples>720</samples>
+                            <samples>640</samples>
                             <resolution>1</resolution>
-                            <min_angle>-2.356</min_angle> <!-- -135 degrees -->
-                            <max_angle>2.356</max_angle>  <!-- 135 degrees -->
+                            <min_angle>-1.396263</min_angle>
+                            <max_angle>1.396263</max_angle>
                         </horizontal>
                         <vertical>
                             <samples>1</samples>
-                            <resolution>1</resolution>
+                            <resolution>0.01</resolution>
                             <min_angle>0</min_angle>
                             <max_angle>0</max_angle>
                         </vertical>
                     </scan>
                     <range>
-                        <min>0.1</min>
+                        <min>0.08</min>
                         <max>10.0</max>
                         <resolution>0.01</resolution>
                     </range>
                 </ray>
                 <always_on>1</always_on>
-                <plugin name="gazebo_ros_laser" filename="libgazebo_ros_ray_sensor.so">
-                    <output_type>sensor_msgs/LaserScan</output_type>
-                    <frame_id>${frame_prefix}_link</frame_id>
-                </plugin>
+                <visualize>true</visualize>
             </sensor>
         </gazebo>
     </xacro:macro>
