@@ -1,13 +1,13 @@
-# Task Description
+# Path Optimization Simulation
 
-Please read through [this](https://www.overleaf.com/read/dmgrrcmpkbkq#211e69) document before moving forward.
+An extension of [this](https://github.com/WilliamZhang20/ros-task) repository, but now with simulation of more complex dynamic obstacle avoidance algorithms.
 
-### Software Structure
-```
-- docker -- Where the Dockerfile lives.
-- scripts -- Where necessary external scripts live.
-- workspace -- Where all the packages live.
-```
+## Outline
+
+1. Configured working LiDAR with a new `/scan` topic.
+2. todo: Implementation of Timed Elastic Band (TEB) and/or Model Predictive Path Integral controllers for path optimization
+
+## How to Run
 
 ### Build the simulator
 
@@ -21,15 +21,3 @@ Please read through [this](https://www.overleaf.com/read/dmgrrcmpkbkq#211e69) do
 ./scripts/deploy/devel.sh # To enter the docker container
 ros2 launch limo_simulation limo.launch.py # To launch the simulator
 ```
-
-### What do I edit?
-
-1. Modify the package `limo_control` in the workspace directory for adding your c++ controller program.
-2. Make a launch file that can launch everything (Controller and Simualation).
-3. Modify `scripts/deploy/app.sh` such that, when `scripts/deploy/start.sh` is run, the task is executed automatically.
-
-### Known Issues
-
-1. This will not work with docker desktop, please do not use it, use the default engine.
-
-Feel free to modify anything else if it does not work as expected.
