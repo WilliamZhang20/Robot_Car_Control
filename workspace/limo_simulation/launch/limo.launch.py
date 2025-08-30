@@ -35,6 +35,11 @@ def generate_launch_description():
         }.items()
     )
 
+    laser_data_output = Node(
+        package="laser_check",
+        executable="laser_data"
+    )
+
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -53,22 +58,17 @@ def generate_launch_description():
         ],
     )
 
-    gz_spawn_entity = TimerAction(
-        period=3.0,  # wait 3 seconds
-        actions=[
-            Node(
-                package="ros_gz_sim",
-                executable="create",
-                arguments=[
-                    "-topic", "/robot_description",
-                    "-name", "limobot",
-                    "-allow_renaming", "true",
-                    "-z", "0.3",
-                    "-x", "0.0",
-                    "-y", "0.0",
-                    "-Y", "0.3"
-                ]
-            )
+    gz_spawn_entity = Node(
+        package="ros_gz_sim",
+        executable="create",
+        arguments=[
+            "-topic", "/robot_description",
+            "-name", "limobot",
+            "-allow_renaming", "true",
+            "-z", "0.3",
+            "-x", "0.0",
+            "-y", "0.0",
+            "-Y", "0.3"
         ]
     )
 
@@ -95,5 +95,6 @@ def generate_launch_description():
         robot_state_publisher,
         gz_spawn_entity,
         gz_sim,
-        gz_ros2_bridge
+        gz_ros2_bridge,
+        laser_data_output
     ])
