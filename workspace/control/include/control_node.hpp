@@ -13,9 +13,8 @@ class ControlNode : public rclcpp::Node {
     ControlNode();
 
   private:
-    robot::TebOptimalPlanner control_;
+    robot::ControlCore control_;
 
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
@@ -23,7 +22,6 @@ class ControlNode : public rclcpp::Node {
 
     void pathCallback(const nav_msgs::msg::Path::SharedPtr msg);
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
-    void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
 
     void controlLoop();
 };
