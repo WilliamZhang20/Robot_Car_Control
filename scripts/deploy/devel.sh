@@ -28,12 +28,10 @@ export GAZEBO_PLUGIN_PATH="${GAZEBO_PLUGIN_PATH}:/opt/ros/humble/lib/gazebo/plug
 
 if [ "$mode" == "gpu" ]; then
     run_docker --runtime=nvidia \
-    -v $(dirname "$0")/../../workspace/:/root/workspace/src \
     limo_bot:sim bash
 else
     run_docker \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v $(dirname "$0")/../../workspace/:/root/workspace/src \
     limo_bot:sim bash
 fi

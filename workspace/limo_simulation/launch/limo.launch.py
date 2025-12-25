@@ -35,9 +35,29 @@ def generate_launch_description():
         }.items()
     )
 
-    laser_data_output = Node(
-        package="laser_check",
-        executable="laser_data"
+    # Navigation stack nodes
+    costmap_node = Node(
+        package="costmap",
+        executable="costmap_node",
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    control_node = Node(
+        package="control",
+        executable="control_node",
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    map_memory_node = Node(
+        package="map_memory",
+        executable="map_memory_node",
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    planner_node = Node(
+        package="planner",
+        executable="planner_node",
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     robot_state_publisher = Node(
@@ -66,7 +86,7 @@ def generate_launch_description():
             "-name", "limobot",
             "-allow_renaming", "true",
             "-z", "0.3",
-            "-x", "0.0",
+            "-x", "-6.0",
             "-y", "0.0",
             "-Y", "0.3"
         ]
@@ -96,5 +116,8 @@ def generate_launch_description():
         gz_spawn_entity,
         gz_sim,
         gz_ros2_bridge,
-        laser_data_output
+        costmap_node,
+        control_node,
+        map_memory_node,
+        planner_node
     ])
