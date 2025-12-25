@@ -110,9 +110,17 @@ public:
     dt = std::max(dt, 1e-6);
     double v = dist / dt;
     double omega = dtheta / dt;
-    // soft residual toward desired velocities (or toward zero for limits)
-    _error[0] = (v > max_v_) ? (v - max_v_) : 0.0;
-    _error[1] = (std::abs(omega) > max_omega_) ? (std::abs(omega) - max_omega_) : 0.0;
+    // Smooth velocity constraints instead of hard limits
+    double v_error = std::max(0.0, v - max_v_);
+    double omega_error = std::max(0.0, std::abs(omega) - max_omega_);
+    
+    // Add soft constraint to encourage reasonable velocity
+    if (v < max_v_ * 0.3) {
+      v_error += (max_v_ * 0.3 - v) * 0.1;  // Gentle pull toward minimum speed
+    }
+    
+    _error[0] = v_error;
+    _error[1] = omega_error;
   }
   
   void linearizeOplus() override {

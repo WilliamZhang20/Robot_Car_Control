@@ -12,7 +12,7 @@ ControlNode::ControlNode(): Node("control"), control_(robot::TebOptimalPlanner(t
   cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
   control_timer_ = create_wall_timer(
-      std::chrono::milliseconds(10), std::bind(&ControlNode::controlLoop, this));  // Increased from 20ms to 10ms (100Hz)
+      std::chrono::milliseconds(50), std::bind(&ControlNode::controlLoop, this));  // Increased from 10ms to 50ms (20Hz) for trajectory convergence
 }
 
 void ControlNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
@@ -39,10 +39,18 @@ void ControlNode::controlLoop() {
             cmd_vel_pub_->publish(cmd_vel);
             return;
         }
+
+        // Check if goal is reached - stop control loop if so
+        if (control_.isGoalReached()) {
+            RCLCPP_INFO(this->get_logger(), "Goal reached! Stopping robot.");
+            geometry_msgs::msg::Twist cmd_vel;  // Zero velocity
+            cmd_vel_pub_->publish(cmd_vel);
+            return;
+        }
         
         control_.optimizeTEB(
-            15,      // iterations_innerloop (increased from 10 for better optimization)
-            10,       // iterations_outerloop (increased from 2 for more aggressive optimization)
+            15,       // iterations_innerloop 
+            3,       // iterations_outerloop
             false,   // compute_cost_afterwards
             3.0,     // obst_cost_scale
             1.0,     // viapoint_cost_scale

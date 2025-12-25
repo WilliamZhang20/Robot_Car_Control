@@ -18,11 +18,11 @@ struct TrajPose {
 };
 
 struct TebConfig {
-  struct Optim { bool optimization_activate = true; double weight_adapt_factor = 1.5; } optim;  // Increased for more aggressive optimization
+  struct Optim { bool optimization_activate = true; double weight_adapt_factor = 2.0; } optim;  // More aggressive weight adaptation
   struct Obs { bool include_dynamic_obstacles = false; } obstacles;
-  struct Traj { bool teb_autosize = false; double dt_ref = 0.1; double dt_hysteresis = 0.03;  // Faster control frequency
-                int min_samples = 3; int max_samples = 50; } trajectory;
-  struct Robot { double max_vel_x = 1.0; double max_vel_y = 0.5; double max_vel_theta = 1.5; double acc_lim_x = 2.0; } robot;  // Significantly increased for faster motion
+  struct Traj { bool teb_autosize = false; double dt_ref = 0.08; double dt_hysteresis = 0.02;  // Much faster control frequency
+                int min_samples = 3; int max_samples = 40; } trajectory;
+  struct Robot { double max_vel_x = 2.0; double max_vel_y = 0.5; double max_vel_theta = 1.5; double acc_lim_x = 2.5; } robot;  // Reduced for stability over speed
 };
 
 class TebOptimalPlanner {
@@ -50,6 +50,7 @@ public:
   bool hasPath() const { return current_path_ != nullptr && !current_path_->poses.empty(); }
   bool hasOdometry() const { return current_odom_ != nullptr; }
   bool hasOccupancyGrid() const { return current_map_ != nullptr; }
+  bool isGoalReached() const;
 
 private:
   rclcpp::Logger logger_;

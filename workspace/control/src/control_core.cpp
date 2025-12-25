@@ -175,15 +175,11 @@ void TebOptimalPlanner::autoResize(double dt_ref, double dt_hyst, int min_sample
 }
 
 bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
-  RCLCPP_DEBUG(logger_, "buildGraph called with weight_multiplier=%.3f", weight_multiplier);
   
   clearGraph();
   if (teb_.size() < 2) {
-    RCLCPP_DEBUG(logger_, "TEB size too small: %zu", teb_.size());
     return false;
   }
-
-  RCLCPP_DEBUG(logger_, "Building graph with %zu TEB poses", teb_.size());
   
   optimizer_->clear();
   pose_vertices_.clear();
@@ -191,12 +187,10 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
 
   // create pose vertices
   int vid = 0;
-  RCLCPP_DEBUG(logger_, "Creating pose vertices");
   for (size_t i=0;i<teb_.size();++i) {
     auto v = new VertexPose();
     v->setId(vid++);
     Eigen::Vector3d est(teb_[i].x, teb_[i].y, teb_[i].theta);
-    RCLCPP_DEBUG(logger_, "Pose vertex %zu: (%.3f, %.3f, %.3f)", i, teb_[i].x, teb_[i].y, teb_[i].theta);
     v->setEstimate(est);
     if (i==0) v->setFixed(true); // fix first pose to robot pose
     optimizer_->addVertex(v);
@@ -209,7 +203,6 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
     auto vt = new VertexTimeDiff();
     vt->setId(vid++);
     double dt_init = std::max(1e-3, teb_[i+1].t - teb_[i].t);
-    RCLCPP_DEBUG(logger_, "Time vertex %zu: dt=%.6f, log(dt)=%.6f", i, dt_init, std::log(dt_init));
     vt->setEstimate(std::log(dt_init));
     optimizer_->addVertex(vt);
     time_vertices_.push_back(vt);
@@ -217,43 +210,28 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
 
   // edges: shortest path reference for each pose (except first maybe) - PRIORITIZE A* PATH!
   int eid = 0;
-  RCLCPP_DEBUG(logger_, "Creating shortest path edges");
   for (size_t i=1;i<pose_vertices_.size();++i) {
     auto ref = nearestPointOnPath(teb_[i].x, teb_[i].y);
-    RCLCPP_DEBUG(logger_, "Nearest point for pose %zu: (%.3f, %.3f)", i, ref.first, ref.second);
     auto e = new EdgeShortestPath();
     e->setId(eid++);
     e->setVertex(0, pose_vertices_[i]);
     e->setMeasurement(Eigen::Vector2d(ref.first, ref.second));
-    RCLCPP_DEBUG(logger_, "Creating information matrix for edge %d", eid-1);
-    Eigen::Matrix2d info = Eigen::Matrix2d::Identity() * (200.0 * weight_multiplier);  // Massively increased from 50.0 to 200.0 - A* PATH IS PRIMARY OBJECTIVE!
-    RCLCPP_DEBUG(logger_, "Information matrix created, setting on edge");
+    Eigen::Matrix2d info = Eigen::Matrix2d::Identity() * (60.0 * weight_multiplier);  // Reduced from 200.0 to 60.0 - balanced with velocity constraints
     e->setInformation(info);
-    RCLCPP_DEBUG(logger_, "Adding edge to optimizer");
     optimizer_->addEdge(e);
   }
 
   // velocity edges linking (pose_i, pose_{i+1}) and dt_i - relaxed constraints
   for (size_t i=0;i+1<pose_vertices_.size();++i) {
-    RCLCPP_DEBUG(logger_, "Creating velocity edge %zu", i);
     auto e = new EdgeVelocity();
-    RCLCPP_DEBUG(logger_, "Setting ID for velocity edge %zu", i);
     e->setId(eid++);
-    RCLCPP_DEBUG(logger_, "Setting vertex 0 for velocity edge %zu", i);
     e->setVertex(0, pose_vertices_[i]);
-    RCLCPP_DEBUG(logger_, "Setting vertex 1 for velocity edge %zu", i);
     e->setVertex(1, pose_vertices_[i+1]);
-    RCLCPP_DEBUG(logger_, "Setting vertex 2 for velocity edge %zu", i);
     e->setVertex(2, time_vertices_[i]);
-    RCLCPP_DEBUG(logger_, "Setting limits for velocity edge %zu", i);
-    e->setLimits(cfg_.robot.max_vel_x * 1.5, cfg_.robot.max_vel_theta * 1.5);  // Relaxed limits by 50%
-    RCLCPP_DEBUG(logger_, "Creating information matrix for velocity edge %zu", i);
-    Eigen::Matrix2d info = Eigen::Matrix2d::Identity() * (50.0 * weight_multiplier);  // Reduced from 150.0 to 50.0 for softer constraints
-    RCLCPP_DEBUG(logger_, "Setting information matrix for velocity edge %zu", i);
+    e->setLimits(cfg_.robot.max_vel_x * 1.8, cfg_.robot.max_vel_theta * 1.8);  // More relaxed limits for smoother motion
+    Eigen::Matrix2d info = Eigen::Matrix2d::Identity() * (80.0 * weight_multiplier);  // Increased from 120.0 to 80.0 for balanced constfollowing
     e->setInformation(info);
-    RCLCPP_DEBUG(logger_, "Adding velocity edge %zu to optimizer", i);
     optimizer_->addEdge(e);
-    RCLCPP_DEBUG(logger_, "Velocity edge %zu added successfully", i);
   }
 
   // holonomic lateral slip edges (penalize lateral displacement) - very relaxed for aggressive lateral corrections
@@ -264,7 +242,7 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
     eh->setVertex(1, pose_vertices_[i+1]);
     eh->setVertex(2, time_vertices_[i]);
     Eigen::Matrix<double,1,1> info;
-    info(0,0) = 1.0 * weight_multiplier;  // Drastically reduced from 50.0 to 5.0 for aggressive lateral corrections
+    info(0,0) = 25.0 * weight_multiplier;  // Increased from 1.0 to 25.0 to prevent lateral slip oscillation
     eh->setInformation(info);
     optimizer_->addEdge(eh);
   }
@@ -280,18 +258,18 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
     ea->setVertex(4, time_vertices_[i+1]);
     ea->setAccelLimit(cfg_.robot.acc_lim_x);
     Eigen::Matrix<double,1,1> info;
-    info(0,0) = 4.0 * weight_multiplier;
+    info(0,0) = 12.0 * weight_multiplier;
     ea->setInformation(info);
     optimizer_->addEdge(ea);
   }
 
   for (size_t i = 0; i + 1 < pose_vertices_.size(); ++i) {
-    auto e_fwd = new EdgeForwardVelocity(5.0);
+    auto e_fwd = new EdgeForwardVelocity(2.0);  // Reduced from 5.0 to 2.0 m/s for realistic target
     e_fwd->setVertex(0, pose_vertices_[i]);
     e_fwd->setVertex(1, pose_vertices_[i+1]);
     e_fwd->setVertex(2, time_vertices_[i]);
     Eigen::Matrix<double,1,1> info_fwd;
-    info_fwd(0,0) = 40.0 * weight_multiplier;  // Increased from 15.0 to 40.0 for stronger forward motion bias
+    info_fwd(0,0) = 8.0 * weight_multiplier;  // Reduced from 40.0 to 8.0 - soft guidance instead of hard constraint
     e_fwd->setInformation(info_fwd);
     optimizer_->addEdge(e_fwd);
   }
@@ -356,7 +334,7 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
     et->setVertex(0, time_vertices_[i]);
     double s_measure = std::log(cfg_.trajectory.dt_ref); // desire log(dt_ref)
     et->setMeasurement(s_measure);
-    et->setWeight(0.01 * weight_multiplier); // Reduced from 0.05 to 0.01 to allow faster motion
+    et->setWeight(0.08 * weight_multiplier); // Increased from 0.01 to 0.08 for more consistent timing
     Eigen::Matrix<double,1,1> info;
     info(0,0) = 1e-5 * weight_multiplier; // Reduced from 1e-4 to 1e-5
     et->setInformation(info);
@@ -368,7 +346,6 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier) {
 
 bool TebOptimalPlanner::optimizeGraph(int iterations, bool verbose) {
   if (!optimizer_) {
-    RCLCPP_ERROR(logger_, "No optimizer available");
     return false;
   }
   
@@ -439,6 +416,22 @@ geometry_msgs::msg::Twist TebOptimalPlanner::computeVelocityCommand() {
     return cmd;
   }
 
+  // Check if we're near the goal - stop spinning at the end
+  if (current_path_ && !current_path_->poses.empty()) {
+    auto& goal = current_path_->poses.back();
+    double goal_x = goal.pose.position.x;
+    double goal_y = goal.pose.position.y;
+    double robot_x = teb_[0].x;
+    double robot_y = teb_[0].y;
+    double dist_to_goal = std::hypot(goal_x - robot_x, goal_y - robot_y);
+    
+    // If very close to goal, stop moving
+    if (dist_to_goal < 0.3) {
+      RCLCPP_INFO(logger_, "Near goal (%.3f m), stopping", dist_to_goal);
+      return cmd;  // Return zero velocity
+    }
+  }
+
   // Extract velocity from first trajectory segment
   double dx = teb_[1].x - teb_[0].x;
   double dy = teb_[1].y - teb_[0].y;
@@ -463,6 +456,14 @@ geometry_msgs::msg::Twist TebOptimalPlanner::computeVelocityCommand() {
   cmd.linear.x = vx_global * cos_theta + vy_global * sin_theta;
   cmd.linear.y = -vx_global * sin_theta + vy_global * cos_theta;
   cmd.angular.z = omega;
+
+  // Limit angular velocity to prevent spinning
+  cmd.angular.z = std::clamp(cmd.angular.z, -1.0, 1.0);
+  
+  // Ensure minimum forward motion if not near goal
+  if (std::abs(cmd.linear.x) < 0.1 && std::abs(cmd.angular.z) < 0.1) {
+    cmd.linear.x = 0.2;  // Minimum forward velocity to prevent getting stuck
+  }
 
   return cmd;
 }
@@ -496,9 +497,8 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
       autoResize(cfg_.trajectory.dt_ref, cfg_.trajectory.dt_hysteresis, cfg_.trajectory.min_samples, cfg_.trajectory.max_samples, fast_mode);
     }
     
-    // build internal band from path/odom - ALWAYS reinitialize for goal changes!
-    if (teb_.empty() || i == 0) {  // Reinitialize on first iteration to respond to goal changes
-      teb_.clear();  // Clear existing trajectory to respond to new goals
+    // build internal band from path/odom - only initialize when truly needed
+    if (teb_.empty()) {  // Only reinitialize when trajectory is actually empty
       // simple initialization using path: sample up to N poses or build N repeated last
       if (!current_odom_ || !current_path_) {
         RCLCPP_WARN(logger_, "Missing odom or path data");
@@ -513,7 +513,7 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
       TrajPose p0{rx, ry, rtheta, 0.0};
       teb_.push_back(p0);
       
-      // Find closest point on path to robot
+      // Find closest point on path to robot - but not too far back
       double min_dist = std::numeric_limits<double>::infinity();
       size_t closest_idx = 0;
       for (size_t k = 0; k < current_path_->poses.size(); ++k) {
@@ -526,14 +526,17 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
         }
       }
       
+      // Don't start too far back on the path - look ahead
+      size_t start_idx = std::min(closest_idx + 2, current_path_->poses.size() - 1);
+      
       double lastx = rx, lasty = ry, last_theta = rtheta;
-      double horizon = 3.0;
-      double desired_speed = 0.8;  // Increased to 0.8 to match forward velocity target for faster motion
+      double horizon = 1.5;  // Reduced from 3.0 to prevent circular trajectories
+      double desired_speed = 0.5;  // Reduced from 0.8 for more stable initialization
       double time_per_segment = horizon / (desired_speed * (N-1));
       size_t sampled = 1;
       
-      // Start from closest point on path and sample forward
-      for (size_t k = closest_idx; k < current_path_->poses.size() && sampled < (size_t)N; ++k) {
+      // Start from ahead on path and sample forward
+      for (size_t k = start_idx; k < current_path_->poses.size() && sampled < (size_t)N; ++k) {
         double px = current_path_->poses[k].pose.position.x;
         double py = current_path_->poses[k].pose.position.y;
         double seg = std::hypot(px-lastx, py-lasty);
@@ -590,4 +593,25 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
   }
 
   return true;
+}
+
+bool TebOptimalPlanner::isGoalReached() const {
+  if (!current_path_ || current_path_->poses.empty() || !current_odom_) {
+    return false;
+  }
+
+  // Get robot position
+  double robot_x = current_odom_->pose.pose.position.x;
+  double robot_y = current_odom_->pose.pose.position.y;
+  
+  // Get goal position (last pose in path)
+  const auto& goal = current_path_->poses.back();
+  double goal_x = goal.pose.position.x;
+  double goal_y = goal.pose.position.y;
+  
+  // Calculate distance to goal
+  double dist_to_goal = std::hypot(goal_x - robot_x, goal_y - robot_y);
+  
+  // Goal is reached if within 0.3m (same threshold as in computeVelocityCommand)
+  return dist_to_goal < 0.3;
 }
