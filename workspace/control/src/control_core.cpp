@@ -8,7 +8,7 @@ ControlCore::ControlCore(const rclcpp::Logger& logger)
     min_lookahead_distance_(0.3),
     max_lookahead_distance_(2.0),
     lookahead_time_(1.5),
-    max_linear_speed_(1.0),
+    max_linear_speed_(0.5),
     min_linear_speed_(0.1),
     max_angular_speed_(1.0),
     goal_tolerance_(0.2) {}
