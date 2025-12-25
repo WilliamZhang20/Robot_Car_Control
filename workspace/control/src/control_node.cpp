@@ -5,7 +5,7 @@ ControlNode::ControlNode(): Node("control"), control_(robot::ControlCore(this->g
       "/path", 10, std::bind(&ControlNode::pathCallback, this, std::placeholders::_1));
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/odom/filtered", 10, std::bind(&ControlNode::odomCallback, this, std::placeholders::_1));
+      "/odom", 10, std::bind(&ControlNode::odomCallback, this, std::placeholders::_1));
 
   cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 

@@ -61,17 +61,6 @@ RUN rosdep update && cd $WORKSPACE_PATH && \
     rosdep install --from-paths src -y --ignore-src --rosdistro=$ROS_DISTRO --skip-keys="gazebo,ros-gz,ros_gz" || \
     (echo "Warning: some rosdeps failed to install, continuing build. Missing deps may be optional (e.g. ros_gz)." && true)
 
-# Build g2o (shallow clone + ccache) and install into /usr/local
-WORKDIR /opt
-RUN git clone --depth=1 https://github.com/RainerKuemmerle/g2o.git && \
-    cd g2o && mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DG2O_BUILD_EXAMPLES=OFF \
-      -DG2O_BUILD_APPLICATIONS=OFF \
-      -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-    make -j$(nproc) && make install
-
 # Tune ccache (keeps cache size reasonable)
 RUN ccache --max-size=2G || true
 

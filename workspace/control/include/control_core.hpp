@@ -25,13 +25,17 @@ class ControlCore {
     nav_msgs::msg::Path::SharedPtr current_path_;
     nav_msgs::msg::Odometry::SharedPtr current_odometry_;
 
-    // Control parameters (example values)
-    double lookahead_distance_;
-    double linear_speed_;
+    // Regulated Pure Pursuit parameters
+    double min_lookahead_distance_;
+    double max_lookahead_distance_;
+    double lookahead_time_;
+    double max_linear_speed_;
+    double min_linear_speed_;
+    double max_angular_speed_;
+    double goal_tolerance_;
 
     // Helper functions for calculation
-    std::optional<geometry_msgs::msg::PoseStamped> findLookaheadPoint(double robot_x, double robot_y);
-    double calculateSteeringAngle(double robot_x, double robot_y, const geometry_msgs::msg::PoseStamped& lookahead_point);
+    std::optional<geometry_msgs::msg::PoseStamped> findLookaheadPoint(double robot_x, double robot_y, double lookahead_distance);
     double computeDistance(double x1, double y1, double x2, double y2);
     double extractYaw(const geometry_msgs::msg::Quaternion &quat);
 };
