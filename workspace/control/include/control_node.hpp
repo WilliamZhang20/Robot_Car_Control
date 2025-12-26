@@ -13,7 +13,7 @@ class ControlNode : public rclcpp::Node {
     ControlNode();
 
   private:
-    robot::TebOptimalPlanner control_;
+    robot::ControlCore control_;
 
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;

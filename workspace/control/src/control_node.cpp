@@ -1,6 +1,6 @@
 #include "control_node.hpp"
 
-ControlNode::ControlNode(): Node("control"), control_(robot::TebOptimalPlanner(this->get_logger())) {
+ControlNode::ControlNode(): Node("control"), control_(robot::ControlCore(this->get_logger())) {
   map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>("/costmap", 10, std::bind(&ControlNode::mapCallback, this, std::placeholders::_1));
 
   path_sub_ = create_subscription<nav_msgs::msg::Path>(
@@ -16,63 +16,45 @@ ControlNode::ControlNode(): Node("control"), control_(robot::TebOptimalPlanner(t
 }
 
 void ControlNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "mapCallback: received map width=%d height=%d res=%f", msg->info.width, msg->info.height, msg->info.resolution);
     control_.setOccupancyGrid(msg);
 }
 
 void ControlNode::pathCallback(const nav_msgs::msg::Path::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "pathCallback: received path with %zu poses", msg->poses.size());
     control_.setGlobalPath(msg);
 }
 
 void ControlNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
+    double yaw = 0.0; // extract yaw for log
+    {
+      auto &o = msg->pose.pose.orientation;
+      double siny_cosp = 2.0 * (o.w * o.z + o.x * o.y);
+      double cosy_cosp = 1.0 - 2.0 * (o.y * o.y + o.z * o.z);
+      yaw = std::atan2(siny_cosp, cosy_cosp);
+    }
+    RCLCPP_DEBUG(this->get_logger(), "odomCallback: x=%f y=%f yaw=%f", msg->pose.pose.position.x, msg->pose.pose.position.y, yaw);
     control_.setOdometry(msg);
 }
 
 void ControlNode::controlLoop() {
-    try {
-        // Safety check - don't run TEB optimization without valid data
-        if (!control_.hasPath() || !control_.hasOdometry()) {
-            RCLCPP_DEBUG(this->get_logger(), "Missing data - path: %s, odom: %s", 
-                         control_.hasPath() ? "yes" : "no",
-                         control_.hasOdometry() ? "yes" : "no");
-            // Publish zero velocity when no data available
-            geometry_msgs::msg::Twist cmd_vel;
-            cmd_vel_pub_->publish(cmd_vel);
-            return;
-        }
+    RCLCPP_DEBUG(this->get_logger(), "controlLoop: hasPath=%d hasOdom=%d hasMap=%d", control_.hasPath(), control_.hasOdometry(), control_.hasOccupancyGrid());
+    if (!control_.hasOdometry() || !control_.hasPath()) return;
 
-        // Check if goal is reached - stop control loop if so
-        if (control_.isGoalReached()) {
-            RCLCPP_INFO(this->get_logger(), "Goal reached! Stopping robot.");
-            geometry_msgs::msg::Twist cmd_vel;  // Zero velocity
-            cmd_vel_pub_->publish(cmd_vel);
-            return;
-        }
-        
-        control_.optimizeTEB(
-            15,       // iterations_innerloop 
-            3,       // iterations_outerloop
-            false,   // compute_cost_afterwards
-            3.0,     // obst_cost_scale
-            1.0,     // viapoint_cost_scale
-            false    // alternative_time_cost
-        );
-        
-        geometry_msgs::msg::Twist cmd_vel = control_.computeVelocityCommand();
-        RCLCPP_DEBUG(this->get_logger(), "Velocity command: linear.x=%.3f, angular.z=%.3f", 
-                     cmd_vel.linear.x, cmd_vel.angular.z);
+    auto cmd = control_.computeVelocityCommand();
 
-        cmd_vel_pub_->publish(cmd_vel);
-    } catch (const std::exception& e) {
-        RCLCPP_ERROR(this->get_logger(), "Control loop exception: %s", e.what());
-        // Publish zero velocity on error
-        geometry_msgs::msg::Twist cmd_vel;
-        cmd_vel_pub_->publish(cmd_vel);
-    } catch (...) {
-        RCLCPP_ERROR(this->get_logger(), "Unknown control loop exception");
-        // Publish zero velocity on error
-        geometry_msgs::msg::Twist cmd_vel;
-        cmd_vel_pub_->publish(cmd_vel);
+    // If goal reached ensure we publish zero velocity
+    if (control_.isGoalReached()) {
+      RCLCPP_INFO(this->get_logger(), "controlLoop: goal reached - publishing stop");
+      geometry_msgs::msg::Twist stop;
+      stop.linear.x = 0.0;
+      stop.angular.z = 0.0;
+      cmd_vel_pub_->publish(stop);
+      return;
     }
+
+    RCLCPP_DEBUG(this->get_logger(), "controlLoop: publishing cmd linear_x=%f angular_z=%f", cmd.linear.x, cmd.angular.z);
+    cmd_vel_pub_->publish(cmd);
 }
 
 int main(int argc, char ** argv)

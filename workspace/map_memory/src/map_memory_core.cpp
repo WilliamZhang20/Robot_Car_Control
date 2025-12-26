@@ -6,7 +6,8 @@ namespace robot
 {
 
 MapMemoryCore::MapMemoryCore(const rclcpp::Logger& logger) 
-  : logger_(logger), last_x(0.0), last_y(0.0), distance_threshold(1.5), costmap_updated_(false) {}
+  : logger_(logger), last_x(0.0), last_y(0.0), distance_threshold(1.5), 
+    costmap_updated_(false), ema_alpha_(0.3) {}  // Alpha controls responsiveness
 
 void MapMemoryCore::updateCostmap(const nav_msgs::msg::OccupancyGrid &costmap) {
   latest_costmap_ = costmap;
@@ -65,8 +66,8 @@ void MapMemoryCore::initializeGlobalMap() {
   global_map_.info.resolution = latest_costmap_.info.resolution;
   global_map_.info.width = global_width;
   global_map_.info.height = global_height;
-  global_map_.info.origin.position.x = -global_width * global_map_.info.resolution / 2.0; // center the map
-  global_map_.info.origin.position.y = -global_width * global_map_.info.resolution / 2.0; // // center the map
+  global_map_.info.origin.position.x = -global_width * global_map_.info.resolution / 2.0;
+  global_map_.info.origin.position.y = -global_width * global_map_.info.resolution / 2.0;
   global_map_.info.origin.orientation.w = 1.0;
 
   global_map_.data.resize(global_map_.info.width * global_map_.info.height, 0);
@@ -118,13 +119,15 @@ void MapMemoryCore::integrateCostmap(const nav_msgs::msg::Odometry &odom) {
       int global_y_in_grid = (global_y_in_meter - global_map_origin_y) / global_map_resolution;
 
       if (isWithinBounds(global_x_in_grid, global_y_in_grid)) {
-        // Merge into global map
+        // Account for dynamic obstacles with EMA
+        // Apply EMA: new_value = alpha * new_observation + (1 - alpha) * old_value
         size_t global_index = global_y_in_grid * global_map_.info.width + global_x_in_grid;
         int8_t &global_val = global_map_.data[global_index];
-        int global_val_int = global_val;
         int costmap_val = latest_costmap_.data[y * costmap_width + x];
-        int merged_cost = std::max(global_val_int, costmap_val);
-        global_val = merged_cost;
+        
+        // EMA formula
+        double ema_value = ema_alpha_ * costmap_val + (1.0 - ema_alpha_) * global_val;
+        global_val = static_cast<int8_t>(std::round(ema_value));
       }
     }
   }

@@ -26,6 +26,7 @@ class MapMemoryCore {
     nav_msgs::msg::OccupancyGrid latest_costmap_;
 
     double last_x, last_y;
+    double ema_alpha_;
     const double distance_threshold;
     bool should_update_map_ = false;
     bool costmap_updated_ = false;
