@@ -38,8 +38,8 @@ header:
     nanosec: 0
   frame_id: 'map'
 point:
-  x: 1.0
-  y: 10.0
+  x: 5.0
+  y: 8.0
   z: 0.3
 " --once
 ```

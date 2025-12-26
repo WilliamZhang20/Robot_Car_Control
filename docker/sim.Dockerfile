@@ -1,13 +1,9 @@
-# ROS2 Humble Builder stage (builds g2o and the ROS workspace)
-FROM ros:humble AS builder
+# G2O base stage - cached separately
+FROM ros:humble AS g2o-base
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV WORKSPACE_PATH=/root/workspace
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-ENV IGN_RENDERING_API=ogre
 
-# Remove any stale ROS apt sources/keys shipped by base image to avoid GPG validation errors,
-# then install curl (needed to fetch the official ROS apt key)
+# Install g2o build dependencies
 RUN rm -f /etc/apt/sources.list.d/ros2.list \
     /etc/apt/sources.list.d/ros2-latest.list \
     /etc/apt/sources.list.d/ros-latest.list && \
@@ -15,26 +11,47 @@ RUN rm -f /etc/apt/sources.list.d/ros2.list \
     /usr/share/keyrings/ros-archive-keyring.gpg \
     /usr/share/keyrings/ros2-latest-archive-keyring.gpg || true && \
     apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    build-essential \
+    cmake \
+    git \
+    ccache \
+    libeigen3-dev \
+    libspdlog-dev \
+    libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Add ROS apt signing key and repository, then install remaining build packages
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+# Build and install g2o (this layer will be cached)
+WORKDIR /opt
+RUN git clone --depth=1 https://github.com/RainerKuemmerle/g2o.git && \
+    cd g2o && mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DG2O_BUILD_EXAMPLES=OFF \
+      -DG2O_BUILD_APPLICATIONS=OFF \
+      -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
+    make -j$(nproc) && make install && \
+    rm -rf /opt/g2o
+
+# ROS2 Humble Builder stage (builds the ROS workspace)
+FROM g2o-base AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV WORKSPACE_PATH=/root/workspace
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV IGN_RENDERING_API=ogre
+
+# Install ROS and additional build packages (g2o deps already installed in base)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
     apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     vim \
     python3-pip \
     python3-tk \
-    build-essential \
-    cmake \
-    git \
-    ccache \
     pkg-config \
     make \
-    libeigen3-dev \
-    libspdlog-dev \
-    libsuitesparse-dev \
     qtdeclarative5-dev \
     qt5-qmake \
     libqglviewer-dev-qt5 \
@@ -61,19 +78,8 @@ RUN rosdep update && cd $WORKSPACE_PATH && \
     rosdep install --from-paths src -y --ignore-src --rosdistro=$ROS_DISTRO --skip-keys="gazebo,ros-gz,ros_gz" || \
     (echo "Warning: some rosdeps failed to install, continuing build. Missing deps may be optional (e.g. ros_gz)." && true)
 
-# Build g2o (shallow clone + ccache) and install into /usr/local
-WORKDIR /opt
-RUN git clone --depth=1 https://github.com/RainerKuemmerle/g2o.git && \
-    cd g2o && mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DG2O_BUILD_EXAMPLES=OFF \
-      -DG2O_BUILD_APPLICATIONS=OFF \
-      -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-    make -j$(nproc) && make install
-
 # Tune ccache (keeps cache size reasonable)
-RUN ccache --max-size=2G || true
+RUN ccache --max-size=5G || true
 
 # Build workspace using ccache (same final packages, only faster builds)
 RUN export CCACHE_DIR=/root/.ccache && \
