@@ -46,7 +46,7 @@ private:
   bool optimized_{false};
 
   // parameters (tunable)
-  double max_velocity_{0.8};      // m/s
+  double max_velocity_{1.0};      // m/s
   double max_angular_velocity_{1.0}; // rad/s
   double goal_tolerance_{0.3};    // m
   double obstacle_inflation_{0.3}; // m
