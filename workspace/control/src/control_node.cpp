@@ -16,12 +16,10 @@ ControlNode::ControlNode(): Node("control"), control_(robot::ControlCore(this->g
 }
 
 void ControlNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
-    RCLCPP_INFO(this->get_logger(), "mapCallback: received map width=%d height=%d res=%f", msg->info.width, msg->info.height, msg->info.resolution);
     control_.setOccupancyGrid(msg);
 }
 
 void ControlNode::pathCallback(const nav_msgs::msg::Path::SharedPtr msg) {
-    RCLCPP_INFO(this->get_logger(), "pathCallback: received path with %zu poses", msg->poses.size());
     control_.setGlobalPath(msg);
 }
 
@@ -33,19 +31,16 @@ void ControlNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
       double cosy_cosp = 1.0 - 2.0 * (o.y * o.y + o.z * o.z);
       yaw = std::atan2(siny_cosp, cosy_cosp);
     }
-    RCLCPP_DEBUG(this->get_logger(), "odomCallback: x=%f y=%f yaw=%f", msg->pose.pose.position.x, msg->pose.pose.position.y, yaw);
     control_.setOdometry(msg);
 }
 
 void ControlNode::controlLoop() {
-    RCLCPP_DEBUG(this->get_logger(), "controlLoop: hasPath=%d hasOdom=%d hasMap=%d", control_.hasPath(), control_.hasOdometry(), control_.hasOccupancyGrid());
     if (!control_.hasOdometry() || !control_.hasPath()) return;
 
     auto cmd = control_.computeVelocityCommand();
 
     // If goal reached ensure we publish zero velocity
     if (control_.isGoalReached()) {
-      RCLCPP_INFO(this->get_logger(), "controlLoop: goal reached - publishing stop");
       geometry_msgs::msg::Twist stop;
       stop.linear.x = 0.0;
       stop.angular.z = 0.0;
@@ -53,7 +48,6 @@ void ControlNode::controlLoop() {
       return;
     }
 
-    RCLCPP_DEBUG(this->get_logger(), "controlLoop: publishing cmd linear_x=%f angular_z=%f", cmd.linear.x, cmd.angular.z);
     cmd_vel_pub_->publish(cmd);
 }
 

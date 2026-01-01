@@ -39,7 +39,6 @@ void ControlCore::setGlobalPath(const nav_msgs::msg::Path::SharedPtr &path) {
 
 void ControlCore::setOdometry(const nav_msgs::msg::Odometry::SharedPtr &odom) {
   current_odom_ = odom;
-  double yaw = extractYaw(current_odom_->pose.pose.orientation);
 }
 
 void ControlCore::setOccupancyGrid(const nav_msgs::msg::OccupancyGrid::SharedPtr &map) {
@@ -164,7 +163,6 @@ void ControlCore::optimizeTEB() {
   clearGraph();
   RCLCPP_INFO(logger_, "optimizeTEB: after clearGraph teb_poses=%zu", teb_poses_.size());
   if (!optimizer_) {
-    RCLCPP_WARN(logger_, "optimizeTEB: optimizer was null, creating new one");
     optimizer_ = std::make_unique<SparseOptimizer>();
     typedef g2o::BlockSolver< g2o::BlockSolverTraits<-1, -1> > BlockSolverX;
     typedef g2o::LinearSolverCSparse<BlockSolverX::PoseMatrixType> LinearSolverType;
@@ -172,8 +170,6 @@ void ControlCore::optimizeTEB() {
     auto blockSolver = std::make_unique<BlockSolverX>(std::move(linearSolver));
     auto solver = new g2o::OptimizationAlgorithmLevenberg(std::move(blockSolver));
     optimizer_->setAlgorithm(solver);
-  } else {
-    RCLCPP_DEBUG(logger_, "optimizeTEB: reusing existing optimizer instance");
   }
 
   // add vertices
@@ -183,9 +179,7 @@ void ControlCore::optimizeTEB() {
     v->setEstimate(teb_poses_[i]);
     if (i == 0) v->setFixed(true);
     optimizer_->addVertex(v);
-    auto *got = optimizer_->vertex(static_cast<int>(i));
   }
-  RCLCPP_INFO(logger_, "optimizeTEB: after vertex addition vertices=%zu", optimizer_->vertices().size());
 
   // unary pose-to-point edges (stay close to sampled path)
   for (size_t i = 0; i < teb_poses_.size(); ++i) {
@@ -200,7 +194,6 @@ void ControlCore::optimizeTEB() {
     e->setInformation(Eigen::Matrix3d::Identity() * 1.0);
     optimizer_->addEdge(e);
   }
-  RCLCPP_INFO(logger_, "optimizeTEB: after pose edges edges=%zu", optimizer_->edges().size());
 
   // smoothness edges between consecutive vertices
   for (size_t i = 0; i + 1 < teb_poses_.size(); ++i) {
@@ -214,17 +207,19 @@ void ControlCore::optimizeTEB() {
     es->setVertex(0, v1);
     es->setVertex(1, v2);
     Eigen::Matrix3d info = Eigen::Matrix3d::Zero();
-    info(0,0) = 10.0; info(1,1) = 10.0; info(2,2) = 1.0;
+    info(0,0) = 15.0; info(1,1) = 15.0; info(2,2) = 2.0; // increased smoothness weights for more aggressive optimization
     es->setInformation(info);
     optimizer_->addEdge(es);
   }
-  // obstacle edges
+  // obstacle edges - more selective and less aggressive
+  int obstacle_edges_added = 0;
   for (size_t i = 0; i < teb_poses_.size(); ++i) {
     Eigen::Vector2d p(teb_poses_[i].x(), teb_poses_[i].y());
     Eigen::Vector2d obs;
-    if (getClosestObstacle(p, obs, 2.0)) {
+    if (getClosestObstacle(p, obs, 1.5)) { // reduced search radius
       double dist = (p - obs).norm();
-      if (dist <= (obstacle_inflation_ + 0.5)) {
+      // Only add obstacle constraint if very close
+      if (dist <= obstacle_inflation_ + 0.2) { // reduced threshold
         auto *v = dynamic_cast<VertexPose*>(optimizer_->vertex(static_cast<int>(i)));
         if (!v) {
           RCLCPP_ERROR(logger_, "optimizeTEB: missing vertex %zu for obstacle edge", i);
@@ -234,18 +229,22 @@ void ControlCore::optimizeTEB() {
         eo->safety_radius_ = obstacle_inflation_;
         eo->setVertex(0, v);
         eo->setMeasurement(obs);
-        Eigen::Matrix3d info = Eigen::Matrix3d::Identity() * 80.0; // strong penalty
+        
+        // Adaptive penalty based on distance - closer obstacles get higher penalty
+        double penalty_scale = std::max(0.5, (obstacle_inflation_ + 0.2 - dist) / (obstacle_inflation_ + 0.2));
+        Eigen::Matrix3d info = Eigen::Matrix3d::Identity() * (60.0 * penalty_scale); // reduced base penalty
         eo->setInformation(info);
         optimizer_->addEdge(eo);
+        obstacle_edges_added++;
       }
     }
   }
-  RCLCPP_INFO(logger_, "optimizeTEB: after obstacle edges edges=%zu", optimizer_->edges().size());
-
+  RCLCPP_INFO(logger_, "optimizeTEB: added %d obstacle edges", obstacle_edges_added);
+  
   optimizer_->initializeOptimization();
   optimizer_->setVerbose(false);
   RCLCPP_INFO(logger_, "optimizeTEB: starting optimization vertices=%zu edges=%zu", optimizer_->vertices().size(), optimizer_->edges().size());
-  optimizer_->optimize(8);
+  optimizer_->optimize(8); // reduced iterations to prevent over-optimization near obstacles
 
   // write back optimized poses
   for (size_t i = 0; i < teb_poses_.size(); ++i) {
@@ -282,69 +281,132 @@ geometry_msgs::msg::Twist ControlCore::computeVelocityCommand() {
     return cmd;
   }
 
-  // use first planned segment to compute command
+  if (teb_poses_.size() < 2) {
+    RCLCPP_WARN(logger_, "computeVelocityCommand: insufficient TEB poses for velocity computation");
+    return cmd;
+  }
+
+  // Get current robot state
   Eigen::Vector3d robot;
   robot.x() = current_odom_->pose.pose.position.x;
   robot.y() = current_odom_->pose.pose.position.y;
   robot.z() = extractYaw(current_odom_->pose.pose.orientation);
 
-  // select a target ahead of robot: skip poses that are too close to current robot pose
-  size_t target_idx = 0;
-  double min_target_dist = 0.08; // meters
-  for (size_t k = 1; k < teb_poses_.size(); ++k) {
-    double dxk = teb_poses_[k].x() - robot.x();
-    double dyk = teb_poses_[k].y() - robot.y();
-    double dk = std::hypot(dxk, dyk);
-    RCLCPP_DEBUG(logger_, "computeVelocityCommand: checking teb[%zu] dist=%f", k, dk);
-    if (dk > min_target_dist) { target_idx = k; break; }
-  }
-  // fallback to last if all are too close; prefer the one with max distance
-  if (target_idx == 0) {
-    size_t furthest = 0;
-    double maxd = 0.0;
-    for (size_t k = 0; k < teb_poses_.size(); ++k) {
-      double dk = std::hypot(teb_poses_[k].x() - robot.x(), teb_poses_[k].y() - robot.y());
-      if (dk > maxd) { maxd = dk; furthest = k; }
+  // Find closest point on TEB trajectory
+  size_t closest_idx = 0;
+  double min_dist = std::numeric_limits<double>::infinity();
+  for (size_t i = 0; i < teb_poses_.size(); ++i) {
+    double dx = teb_poses_[i].x() - robot.x();
+    double dy = teb_poses_[i].y() - robot.y();
+    double dist = std::hypot(dx, dy);
+    if (dist < min_dist) {
+      min_dist = dist;
+      closest_idx = i;
     }
-    if (maxd > 0.0) target_idx = furthest;
   }
 
-  Eigen::Vector3d target = teb_poses_[target_idx];
-  double dx = target.x() - robot.x();
-  double dy = target.y() - robot.y();
-  double dist = std::hypot(dx, dy);
-  double angle_to_target = std::atan2(dy, dx);
-  double angular_error = angle_to_target - robot.z();
-  // normalize
-  while (angular_error > M_PI) angular_error -= 2.0*M_PI;
-  while (angular_error < -M_PI) angular_error += 2.0*M_PI;
-
-  RCLCPP_INFO(logger_, "computeVelocityCommand: robot=(%f,%f,%f) target_idx=%zu target=(%f,%f) dist=%f ang_err=%f", robot.x(), robot.y(), robot.z(), target_idx, target.x(), target.y(), dist, angular_error);
-
-  // if target is essentially coincident with robot but goal not reached, nudge forward
-  if (dist < 1e-3 && !isGoalReached()) {
-    RCLCPP_WARN(logger_, "computeVelocityCommand: target coincident with robot (dist=%f); applying small nudge", dist);
-    double v_nudge = std::min(0.06, max_velocity_);
-    cmd.linear.x = v_nudge;
-    cmd.angular.z = 0.0;
-    RCLCPP_INFO(logger_, "computeVelocityCommand: nudge cmd linear_x=%f", cmd.linear.x);
-    return cmd;
+  // Use next segment from closest point for velocity computation
+  size_t next_idx = std::min(closest_idx + 1, teb_poses_.size() - 1);
+  
+  // Compute time-optimal velocities based on TEB segment
+  Eigen::Vector3d current_pose = teb_poses_[closest_idx];
+  Eigen::Vector3d next_pose = teb_poses_[next_idx];
+  
+  // Check if TEB is making progress - if poses are too close, we might be stuck
+  double teb_segment_length = std::hypot(next_pose.x() - current_pose.x(), next_pose.y() - current_pose.y());
+  
+  if (teb_segment_length < 0.01) {
+    // TEB might be stuck near obstacles - use direct path following as fallback
+    RCLCPP_WARN(logger_, "TEB segment too short (%f), using fallback navigation", teb_segment_length);
+    
+    // Find a point further ahead in the original path
+    if (current_path_ && !current_path_->poses.empty()) {
+      // Simple proportional control toward goal
+      const auto& goal = current_path_->poses.back();
+      double dx = goal.pose.position.x - robot.x();
+      double dy = goal.pose.position.y - robot.y();
+      double dist_to_goal = std::hypot(dx, dy);
+      
+      if (dist_to_goal > 0.1) {
+        double angle_to_goal = std::atan2(dy, dx);
+        double heading_error = angle_to_goal - robot.z();
+        while (heading_error > M_PI) heading_error -= 2.0*M_PI;
+        while (heading_error < -M_PI) heading_error += 2.0*M_PI;
+        
+        // Conservative fallback control to prevent flipping
+        cmd.linear.x = std::min(max_velocity_ * 0.4, 0.3 * dist_to_goal);  // much more conservative
+        cmd.angular.z = std::max(-max_angular_velocity_, std::min(max_angular_velocity_, 1.0 * heading_error));  // reduced gain
+        
+        RCLCPP_INFO(logger_, "computeVelocityCommand: fallback cmd linear_x=%f angular_z=%f", 
+                    cmd.linear.x, cmd.angular.z);
+        return cmd;
+      }
+    }
   }
-
-  // simple P controllers
-  double kv = 0.8; // velocity gain
-  double kw = 1.5; // angular gain
-
-  double v = std::min(max_velocity_, kv * dist);
-  double w = std::min(max_angular_velocity_, std::max(-max_angular_velocity_, kw * angular_error));
-
-  // if heading large, rotate first
-  if (std::abs(angular_error) > 0.6) v = 0.0;
-
-  cmd.linear.x = v;
-  cmd.angular.z = w;
-
-  RCLCPP_INFO(logger_, "computeVelocityCommand: computed cmd linear_x=%f angular_z=%f", cmd.linear.x, cmd.angular.z);
+  
+  // Spatial differences
+  double dx = next_pose.x() - current_pose.x();
+  double dy = next_pose.y() - current_pose.y();
+  double dtheta = next_pose.z() - current_pose.z();
+  
+  // Normalize angular difference
+  while (dtheta > M_PI) dtheta -= 2.0*M_PI;
+  while (dtheta < -M_PI) dtheta += 2.0*M_PI;
+  
+  double segment_length = std::hypot(dx, dy);
+  
+  // Estimate time for this segment (more conservative to prevent flipping)
+  double dt = 0.3; // 300ms lookahead - much slower and more stable
+  
+  if (segment_length > 1e-6) {
+    // Compute desired velocities from TEB trajectory
+    double desired_vx = dx / dt;
+    double desired_vy = dy / dt;
+    double desired_w = dtheta / dt;
+    
+    // Transform to robot frame
+    double cos_theta = std::cos(robot.z());
+    double sin_theta = std::sin(robot.z());
+    
+    double v_forward = desired_vx * cos_theta + desired_vy * sin_theta;
+    
+    // Apply velocity limits
+    v_forward = std::max(-max_velocity_, std::min(max_velocity_, v_forward));
+    desired_w = std::max(-max_angular_velocity_, std::min(max_angular_velocity_, desired_w));
+    
+    // Add feedback control to stay on trajectory
+    double pos_error_x = current_pose.x() - robot.x();
+    double pos_error_y = current_pose.y() - robot.y();
+    double heading_error = current_pose.z() - robot.z();
+    
+    // Normalize heading error
+    while (heading_error > M_PI) heading_error -= 2.0*M_PI;
+    while (heading_error < -M_PI) heading_error += 2.0*M_PI;
+    
+    // Feedback gains - much more conservative
+    double kp_pos = 0.8;  // reduced from 2.0
+    double kp_heading = 1.2;  // reduced from 3.0
+    
+    // Transform position error to robot frame
+    double error_forward = pos_error_x * cos_theta + pos_error_y * sin_theta;
+    
+    // Combine feedforward and feedback
+    cmd.linear.x = v_forward + kp_pos * error_forward;
+    cmd.angular.z = desired_w + kp_heading * heading_error;
+    
+    // Final velocity limits
+    cmd.linear.x = std::max(-max_velocity_, std::min(max_velocity_, cmd.linear.x));
+    cmd.angular.z = std::max(-max_angular_velocity_, std::min(max_angular_velocity_, cmd.angular.z));
+    
+  } else {
+    // Stationary segment - just correct heading
+    double heading_error = current_pose.z() - robot.z();
+    while (heading_error > M_PI) heading_error -= 2.0*M_PI;
+    while (heading_error < -M_PI) heading_error += 2.0*M_PI;
+    
+    cmd.linear.x = 0.0;
+    cmd.angular.z = std::max(-max_angular_velocity_, std::min(max_angular_velocity_, 1.5 * heading_error));  // reduced from 3.0
+  }
 
   return cmd;
 }
@@ -366,6 +428,6 @@ bool ControlCore::isGoalReached() const {
   // Calculate distance to goal
   double dist_to_goal = std::hypot(goal_x - robot_x, goal_y - robot_y);
   
-  // Goal is reached if within 0.2m
-  return dist_to_goal < 0.2;
+  // Goal is reached if within 0.15m - tighter tolerance for more aggressive behavior
+  return dist_to_goal < 0.15;
 }

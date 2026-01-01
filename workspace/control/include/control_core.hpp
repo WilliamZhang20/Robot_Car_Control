@@ -45,11 +45,11 @@ private:
   std::vector<Eigen::Vector3d> teb_poses_; // x,y,theta for trajectory
   bool optimized_{false};
 
-  // parameters (tunable)
-  double max_velocity_{1.0};      // m/s
-  double max_angular_velocity_{1.0}; // rad/s
-  double goal_tolerance_{0.3};    // m
-  double obstacle_inflation_{0.3}; // m
+  // parameters (tunable) - conservative to prevent flipping
+  double max_velocity_{0.8};      // m/s - much more conservative
+  double max_angular_velocity_{0.6}; // rad/s - much more conservative
+  double goal_tolerance_{0.2};    // m - increased tolerance
+  double obstacle_inflation_{0.3}; // m - increased safety margin
   double path_sample_distance_{0.3}; // meters between initial samples
   
   // optimization helpers
