@@ -70,3 +70,49 @@ public:
   virtual bool read(std::istream& is) { (void)is; return false; }
   virtual bool write(std::ostream& os) const { (void)os; return false; }
 };
+
+// Kinematic constraint edge for differential drive robots
+class EdgeKinematics : public g2o::BaseBinaryEdge<2, Eigen::Vector2d, VertexPose, VertexPose> {
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  double max_vel_x_{1.0};
+  double max_vel_theta_{1.0};
+  double dt_{0.1}; // time step between poses
+  
+  EdgeKinematics() {}
+  
+  void computeError() override {
+    const VertexPose* v1 = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* v2 = static_cast<const VertexPose*>(_vertices[1]);
+    
+    Eigen::Vector3d pose1 = v1->estimate();
+    Eigen::Vector3d pose2 = v2->estimate();
+    
+    // Compute required velocities
+    double dx = pose2.x() - pose1.x();
+    double dy = pose2.y() - pose1.y();
+    double dtheta = pose2.z() - pose1.z();
+    
+    // Normalize angular difference
+    while (dtheta > M_PI) dtheta -= 2.0*M_PI;
+    while (dtheta < -M_PI) dtheta += 2.0*M_PI;
+    
+    // Transform to robot frame
+    double cos_theta = std::cos(pose1.z());
+    double sin_theta = std::sin(pose1.z());
+    double v_x = (dx * cos_theta + dy * sin_theta) / dt_;
+    double v_theta = dtheta / dt_;
+    
+    // Penalize velocities that exceed limits
+    _error.setZero();
+    if (std::abs(v_x) > max_vel_x_) {
+      _error[0] = std::abs(v_x) - max_vel_x_;
+    }
+    if (std::abs(v_theta) > max_vel_theta_) {
+      _error[1] = std::abs(v_theta) - max_vel_theta_;
+    }
+  }
+  
+  virtual bool read(std::istream& is) { (void)is; return false; }
+  virtual bool write(std::ostream& os) const { (void)os; return false; }
+};
